@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   app:
@@ -8,3 +8,5 @@ services:
       - ./src:/src
       - ./files:/files
     working_dir: /src
+    env_file:
+      - .env

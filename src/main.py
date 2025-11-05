@@ -1,89 +1,73 @@
 from docling.document_converter import DocumentConverter
-from chonkie import SentenceChunker
-from pathlib import Path
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import SimpleDirectoryReader
-import json
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.core.ingestion import IngestionPipeline
+from llama_index.vector_stores.pinecone import PineconeVectorStore
+from pinecone import Pinecone, ServerlessSpec
+from dotenv import load_dotenv
+import os
+
 
 
 # Parsing doc with Docling ****************************************************
-source = "../files/lion.pdf"  # document per local path or URL
-converter = DocumentConverter()
-result = converter.convert(source)
+# source = "../files/lion.pdf"  # document per local path or URL
+# converter = DocumentConverter()
+# result = converter.convert(source)
 
-lionPDF_md = result.document.export_to_markdown() #  pdf to markdown 
+# lionPDF_md = result.document.export_to_markdown() #  pdf to markdown 
 
-# code to create md file for output 
-with open("../files/parsed_lion.md", "w", encoding="utf-8") as f:
-    f.write(lionPDF_md )
-
-
-# Chunking with Chonkie (sentence chunker )++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Basic initialization with default parameters
-
-# chunker = SentenceChunker(
-#     tokenizer="character",     # Default tokenizer (or use "gpt2", etc.)
-#     chunk_size=800,           # Maximum tokens per chunk
-#     chunk_overlap=50,         # Overlap between chunks
-#     min_sentences_per_chunk=1  # Minimum sentences in each chunk
-# )
+# # code to create md file for output 
+# with open("../files/parsed_lion.md", "w", encoding="utf-8") as f:
+#     f.write(lionPDF_md )
 
 
-# file_path = Path("/files/parsed_lion.md")
-# text = file_path.read_text(encoding="utf-8")
-
-# chunks = chunker.chunk(text)
-
-# # Write chunks to markdown file
-# with open("/files/chonkie_chunked_lion.md", "w", encoding="utf-8") as f:
-#     chunk_lines = []
-#     for index, chunk in enumerate(chunks, start=1):
-#         chunk_text = chunk.text if hasattr(chunk, 'text') else str(chunk)
-#         chunk_lines.append(f'## Chunk {index}\n\n{chunk_text}\n\n')
-#     f.write(''.join(chunk_lines))
 
 
 # Chunking with Lllamaindex (sentence splitter)+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-# # Load the lion.md file
-# lionMD= SimpleDirectoryReader(input_files=["/files/parsed_lion.md"]).load_data()
 
-# # measured by tokens
-# splitter = SentenceSplitter(
-#     chunk_size=400,
-#     chunk_overlap=20,
-# )
-# nodes = splitter.get_nodes_from_documents(lionMD)
+# Load environment variables from .env file
+load_dotenv()
 
+# Load the lion.md file
+lionMD = SimpleDirectoryReader(input_files=["../files/parsed_lion.md"]).load_data()
 
+# Initialize connection to Pinecone
+pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
 
-# # Write each node with only important properties to file
-# with open("/files/llama_chunked_lion.md", "w", encoding="utf-8") as f:
-#     for i, node in enumerate(nodes, 1):
-#         f.write(f"\n{'='*80}\n")
-#         f.write(f"NODE {i}\n")
-#         f.write(f"{'='*80}\n")
-        
-#         # Get important properties
-#         node_info = {
-#             'node_id': getattr(node, 'node_id', None),
-#             'text': getattr(node, 'text', None),
-#             'metadata': getattr(node, 'metadata', None),
-#         }
-        
-#         # Add any start/end char indexes if available
-#         if hasattr(node, 'start_char_idx'):
-#             node_info['start_char_idx'] = node.start_char_idx
-#         if hasattr(node, 'end_char_idx'):
-#             node_info['end_char_idx'] = node.end_char_idx
-        
-#         # Write formatted output
-#         for key, value in node_info.items():
-#             f.write(f"\n{key}:\n")
-#             if isinstance(value, dict):
-#                 f.write(json.dumps(value, indent=2))
-#             else:
-#                 f.write(str(value))
-#             f.write("\n")
-        
-#         f.write(f"{'='*80}\n")
+# Get or create index (text-embedding-3-small has 1536 dimensions)
+index_name = "lion"
+
+# Create your index (can skip this step if your index already exists)
+try:
+    pc.create_index(
+        index_name,
+        dimension=1536,  # text-embedding-3-small dimension
+        spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+    )
+except Exception:
+    # Index already exists, continue
+    pass
+
+# Initialize your index
+pinecone_index = pc.Index(index_name)
+
+# Initialize VectorStore
+vector_store = PineconeVectorStore(pinecone_index=pinecone_index)
+
+# Create embedding model
+embed_model = OpenAIEmbedding(model="text-embedding-3-small")
+
+# Create ingestion pipeline with transformations
+pipeline = IngestionPipeline(
+    transformations=[
+        SentenceSplitter(chunk_size=400, chunk_overlap=20),  # measure by tokens
+        embed_model,
+    ],
+    vector_store=vector_store,
+)
+
+# Ingest directly into vector db
+pipeline.run(documents=lionMD)
+
