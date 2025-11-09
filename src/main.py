@@ -151,4 +151,6 @@ try:
 except Exception as e:
     print(f"Error listing bucket: {e}")
 
-main(bucket_name, s3_key)
+main(bucket_name, s3_key) 
+# bucket_name: wild-cats-pipeline/
+# s3_key: wild-cats-pipeline/African-lion.pdf
