@@ -14,6 +14,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch_name }}
+
+      - name: Verify checked out branch
+        run: |
+          git branch --show-current
+          echo "Repository checked out to branch: ${{ github.event.inputs.branch_name }}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
